@@ -300,7 +300,7 @@ resource "azurerm_nginx_deployment" "test" {
     subnet_id = azurerm_subnet.test.id
   }
   capacity = 10
-  email = "test@test.com"
+  email    = "test@test.com"
   configuration {
     root_file = "/etc/nginx/nginx.conf"
     config_file {

@@ -1,5 +1,5 @@
 ---
-subcategory: "Nginx"
+subcategory: "NGINX"
 layout: "azurerm"
 page_title: "Azure Resource Manager: azurerm_nginx_configuration"
 description: |-

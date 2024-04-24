@@ -45,6 +45,20 @@ func TestAccConfiguration_basic(t *testing.T) {
 	})
 }
 
+func TestAccConfiguration_withCertificate(t *testing.T) {
+	data := acceptance.BuildTestData(t, nginx.ConfigurationResource{}.ResourceType(), "test")
+	r := ConfigurationResource{}
+	data.ResourceTest(t, r, []acceptance.TestStep{
+		{
+			Config: r.withCertificate(data),
+			Check: acceptance.ComposeTestCheckFunc(
+				check.That(data.ResourceName).ExistsInAzure(r),
+			),
+		},
+		data.ImportStep(),
+	})
+}
+
 func TestAccConfiguration_update(t *testing.T) {
 	data := acceptance.BuildTestData(t, nginx.ConfigurationResource{}.ResourceType(), "test")
 	r := ConfigurationResource{}
@@ -101,6 +115,49 @@ resource "azurerm_nginx_configuration" "test" {
   }
 }
 `, a.template(data))
+}
+
+func (a ConfigurationResource) withCertificate(data acceptance.TestData) string {
+	return fmt.Sprintf(`
+
+%s
+
+locals {
+  config_content = base64encode(<<-EOT
+http {
+    server {
+      listen 443 ssl;
+      ssl_certificate /etc/nginx/ssl/test.crt;
+      ssl_certificate_key /etc/nginx/ssl/test.key;
+      location / {
+        return 200 "Hello World";
+      }
+    }
+}
+EOT
+  )
+}
+
+resource "azurerm_nginx_certificate" "test" {
+  name                     = "acctest"
+  nginx_deployment_id      = azurerm_nginx_deployment.test.id
+  key_virtual_path         = "/etc/nginx/ssl/test.key"
+  certificate_virtual_path = "/etc/nginx/ssl/test.crt"
+  key_vault_secret_id      = azurerm_key_vault_certificate.test.secret_id
+}
+
+resource "azurerm_nginx_configuration" "test" {
+  nginx_deployment_id = azurerm_nginx_deployment.test.id
+  root_file           = "/etc/nginx/nginx.conf"
+
+  config_file {
+    content      = local.config_content
+    virtual_path = "/etc/nginx/nginx.conf"
+  }
+
+  depends_on = [azurerm_nginx_certificate.test]
+}
+`, CertificateResource{}.template(data))
 }
 
 func (a ConfigurationResource) requiresImport(data acceptance.TestData) string {
