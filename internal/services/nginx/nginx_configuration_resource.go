@@ -237,7 +237,7 @@ func (m ConfigurationResource) Read() sdk.ResourceFunc {
 			}
 
 			var output ConfigurationModel
-			// protected files field not return by API so decode from state
+			// protected files and package_data fields are not returned by API so decode from state
 			if err := meta.Decode(&output); err != nil {
 				return err
 			}
@@ -248,11 +248,13 @@ func (m ConfigurationResource) Read() sdk.ResourceFunc {
 			if prop := result.Model.Properties; prop != nil {
 				output.RootFile = pointer.ToString(prop.RootFile)
 
+				// GET does not return package_data
 				if prop.Package != nil && prop.Package.Data != nil {
 					output.PackageData = pointer.ToString(prop.Package.Data)
 				}
 
-				if files := prop.Files; files != nil {
+				// GET returns config files when using package_data
+				if files := prop.Files; files != nil && output.PackageData == "" {
 					for _, file := range *files {
 						output.ConfigFile = append(output.ConfigFile, ConfigFile{
 							Content:     pointer.ToString(file.Content),
@@ -311,13 +313,17 @@ func (m ConfigurationResource) Update() sdk.ResourceFunc {
 				upd.Properties.Files = model.toSDKFiles()
 			}
 
+			// ignore config files returned by API when using package_data
+			if model.PackageData != "" {
+				upd.Properties.Files = nil
+			}
+
 			// API does not return protected file field, so always set this field
 			upd.Properties.ProtectedFiles = model.toSDKProtectedFiles()
 
-			if meta.ResourceData.HasChange("package_data") {
-				upd.Properties.Package = &nginxconfiguration.NginxConfigurationPackage{
-					Data: pointer.FromString(model.PackageData),
-				}
+			// API does not return package_data field, so always set this field
+			upd.Properties.Package = &nginxconfiguration.NginxConfigurationPackage{
+				Data: pointer.FromString(model.PackageData),
 			}
 
 			if err := client.ConfigurationsCreateOrUpdateThenPoll(ctx, *id, *upd); err != nil {
