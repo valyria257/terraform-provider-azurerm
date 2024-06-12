@@ -5,6 +5,7 @@ package nginx
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"time"
 
@@ -93,7 +94,7 @@ func (c ConfigurationModel) ToSDKModel() nginxconfiguration.NginxConfiguration {
 
 type ConfigurationResource struct{}
 
-var _ sdk.Resource = (*ConfigurationResource)(nil)
+var _ sdk.ResourceWithCustomizeDiff = (*ConfigurationResource)(nil)
 
 func (m ConfigurationResource) Arguments() map[string]*pluginsdk.Schema {
 	return map[string]*pluginsdk.Schema{
@@ -107,6 +108,7 @@ func (m ConfigurationResource) Arguments() map[string]*pluginsdk.Schema {
 		"config_file": {
 			Type:         pluginsdk.TypeSet,
 			Optional:     true,
+			Computed:     true,
 			AtLeastOneOf: []string{"config_file", "package_data"},
 			Elem: &pluginsdk.Resource{
 				Schema: map[string]*pluginsdk.Schema{
@@ -346,6 +348,45 @@ func (m ConfigurationResource) Delete() sdk.ResourceFunc {
 			}
 
 			return nil
+		},
+	}
+}
+
+// CustomizeDiff checks if there is a change between two files, and if so,
+// sets a new diff value to display the decoded file contents
+// Constraints:
+// - must set Computed: true for config_file
+// - cannot change the diff value for the current state, only the desired
+func (m ConfigurationResource) CustomizeDiff() sdk.ResourceFunc {
+	return sdk.ResourceFunc{
+		Timeout: 5 * time.Minute,
+		Func: func(ctx context.Context, metadata sdk.ResourceMetaData) error {
+			rd := metadata.ResourceDiff
+			if !rd.HasChange("config_file") {
+				return nil
+			}
+			_, newValue := rd.GetChange("config_file")
+			newSet := newValue.(*pluginsdk.Set)
+			updatedSet := pluginsdk.NewSet(newSet.F, nil)
+			for _, f := range newSet.List() {
+				// TODO: check of only content changed
+				// TODO: only display diff, not whole file
+				// TODO: what to do for deleted files?
+				newElemMap := f.(map[string]interface{})
+				updatedElemMap := make(map[string]interface{}, len(newElemMap))
+				for k, v := range newElemMap {
+					updatedElemMap[k] = v
+				}
+
+				data, err := base64.StdEncoding.DecodeString(newElemMap["content"].(string))
+				if err != nil {
+					return err
+				}
+				updatedElemMap["content"] = string(data)
+
+				updatedSet.Add(updatedElemMap)
+			}
+			return rd.SetNew("config_file", updatedSet)
 		},
 	}
 }
